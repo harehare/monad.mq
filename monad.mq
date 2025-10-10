@@ -1,0 +1,459 @@
+# Monad Library for mq
+
+# ============================================================================
+# Identity Monad
+# ============================================================================
+
+def identity_return(value): value;
+
+def identity_bind(m, f): f(m);
+
+# ============================================================================
+# Maybe Monad
+# ============================================================================
+
+def maybe_return(value): value;
+
+def maybe_bind(m, f): if (is_none(m)): None else: f(m);
+
+def maybe_zero(): None;
+
+# ============================================================================
+# List/Sequence Monad
+# ============================================================================
+
+def list_return(value): [value];
+
+def list_bind(m, f): flatten(map(m, f));
+
+def list_zero(): [];
+
+# ============================================================================
+# State Monad
+# ============================================================================
+
+def state_return(value): {"run": fn(state): [value, state];};
+
+
+def state_bind(m, f):
+  {
+    "run": fn(s):
+      let result = m["run"](s)
+      | let value = result[0]
+      | let new_state = result[1]
+      | let next_comp = f(value)
+      | next_comp["run"](new_state)
+    end
+  }
+end
+
+def state_get(): {"run": fn(state): [state, state];};
+
+def state_put(new_state): {"run": fn(state): [None, new_state];};
+
+def state_modify(f): {"run": fn(state): [None, f(state)];};
+
+def run_state(computation, initial_state):
+    computation["run"](initial_state)
+end
+
+# ============================================================================
+# Writer Monad
+# ============================================================================
+
+def writer_return(value): [value, []];
+
+def writer_bind(m, f):
+  let value = m[0]
+  | let log1 = m[1]
+  | let next_m = f(value)
+  | let next_value = next_m[0]
+  | let log2 = next_m[1]
+  | [next_value, log1 + log2]
+end
+
+def writer_tell(message): [None, [message]];
+
+# ============================================================================
+# Reader Monad
+# ============================================================================
+# Monad describing computations which read values from a shared environment.
+# Also known as the environment monad.
+
+def reader_return(value): {"run": fn(env): value;};
+
+
+def reader_bind(m, f):
+  {
+    "run": fn(env):
+      let value = m["run"](env)
+      | let next_comp = f(value)
+      | next_comp["run"](env)
+    end
+  }
+end
+
+# Returns the environment.
+def ask(): {"run": fn(env): env;};
+
+# Returns a function of the current environment.
+def asks(f): {"run": fn(env): f(env);};
+
+# Runs reader g in the context of an environment modified by f.
+def local(f, g): {"run": fn(env): g["run"](f(env));};
+
+# Legacy alias for compatibility
+def reader_ask(): ask();
+
+def run_reader(computation, env): computation["run"](env);
+
+# ============================================================================
+# Either Monad
+# ============================================================================
+
+def either_left(error):
+  {"type": "left", "value": error}
+end
+
+def either_right(value):
+  {"type": "right", "value": value}
+end
+
+def either_return(value):
+  either_right(value)
+end
+
+def either_bind(m, f):
+  if (m["type"] == "left"):
+    m
+  else:
+    f(m["value"])
+end
+
+def is_left(either):
+  either["type"] == "left"
+end
+
+def is_right(either):
+  either["type"] == "right"
+end
+
+# ============================================================================
+# Monad Definitions (inspired by clojure/algo.monads)
+# ============================================================================
+
+# Define monad structure with m-result and m-bind
+def make_monad(m_result, m_bind, m_zero, m_plus):
+  {
+    "m-result": m_result,
+    "m-bind": m_bind,
+    "m-zero": m_zero,
+    "m-plus": m_plus
+  }
+end
+
+# Predefined monads
+def identity_m():
+  make_monad(
+    fn(v): identity_return(v);,
+    fn(m, f): identity_bind(m, f);,
+    None,
+    None
+  )
+end
+
+def maybe_m():
+  make_monad(
+    fn(v): maybe_return(v);,
+    fn(m, f): maybe_bind(m, f);,
+    fn(): maybe_zero();,
+    None
+  )
+end
+
+def list_m():
+  make_monad(
+    fn(v): list_return(v);,
+    fn(m, f): list_bind(m, f);,
+    fn(): list_zero();,
+    fn(m1, m2): m1 + m2;
+  )
+end
+
+def state_m():
+  make_monad(
+    fn(v): state_return(v);,
+    fn(m, f): state_bind(m, f);,
+    None,
+    None
+  )
+end
+
+def writer_m():
+  make_monad(
+    fn(v): writer_return(v);,
+    fn(m, f): writer_bind(m, f);,
+    None,
+    None
+  )
+end
+
+def reader_m():
+  make_monad(
+    fn(v): reader_return(v);,
+    fn(m, f): reader_bind(m, f);,
+    None,
+    None
+  )
+end
+
+def either_m():
+  make_monad(
+    fn(v): either_return(v);,
+    fn(m, f): either_bind(m, f);,
+    None,
+    None
+  )
+end
+
+# ============================================================================
+# domonad - Unified monadic do notation
+# ============================================================================
+
+# Unified domonad that works with any monad definition
+def domonad(monad_def, bindings, body):
+  let m_result = monad_def["m-result"]
+  | let m_bind = monad_def["m-bind"]
+  | let result = fold(bindings, m_result({}), fn(acc, binding):
+      let m_result = monad_def["m-result"]
+      | let m_bind = monad_def["m-bind"]
+      | m_bind(acc, fn(vars):
+        m_bind(binding["value"], fn(val):
+          m_result(set(vars, binding["name"], val))
+        end)
+      end)
+    end)
+  | m_bind(result, body)
+end
+
+# ============================================================================
+# Monadic composition helpers
+# ============================================================================
+
+# Create a binding for domonad
+def bind(name, value):
+  {"name": name, "value": value}
+end
+
+# Compose monadic functions (left to right)
+def m_comp(monad_def, f, g):
+  let m_bind = monad_def["m-bind"]
+  | fn(x): m_bind(f(x), g);
+end
+
+# Sequence a list of monadic values
+def m_sequence(monad_def, ms):
+  let m_result = monad_def["m-result"]
+  | let m_bind = monad_def["m-bind"]
+  | fold(ms, m_result([]), fn(acc, m):
+    m_bind(acc, fn(list):
+      m_bind(m, fn(value):
+        m_result(list + [value])
+      end)
+    end)
+  end)
+end
+
+# Map a monadic function over a list
+def m_map(monad_def, list, f):
+    monad_def["m-bind"](list, f)
+end
+
+# Lift a regular function into a monad
+def m_lift(monad_def, f):
+  let m_result = monad_def["m-result"]
+  | fn(x): m_result(f(x));
+end
+
+# Monadic when - conditional execution
+def m_when(monad_def, condition, action):
+  let m_result = monad_def["m-result"]
+  | if (condition):
+      action
+    else:
+      m_result(None)
+end
+
+# Monadic when-not - conditional execution when condition is false
+def m_when_not(monad_def, condition, action):
+  let m_result = monad_def["m-result"]
+  | if (!condition):
+      action
+    else:
+      m_result(None)
+end
+
+# Get m-zero value if available
+def m_zero(monad_def):
+  let zero_fn = monad_def["m-zero"]
+  | if (is_none(zero_fn)):
+      error("This monad does not have m-zero defined")
+    else:
+      zero_fn()
+end
+
+# Get m-plus operation if available
+def m_plus(monad_def, m1, m2):
+  let plus_fn = monad_def["m-plus"]
+  | if (is_none(plus_fn)):
+      error("This monad does not have m-plus defined")
+    else:
+      plus_fn(m1, m2)
+end
+
+# ============================================================================
+# Example Usage
+# ============================================================================
+
+# Example 1: Maybe monad with unified domonad
+def safe_divide(a, b):
+  if (b == 0):
+    None
+  else:
+    a / b
+end
+
+def example_maybe():
+  domonad(
+    maybe_m(),
+    [
+      bind("x", safe_divide(10, 2)),
+      bind("y", safe_divide(20, 4)),
+      bind("z", safe_divide(30, 3))
+    ],
+    fn(vars): maybe_return(vars["x"] + vars["y"] + vars["z"]);
+  )
+end
+
+# Example 2: List monad for non-deterministic computation
+def example_list_pairs():
+  domonad(
+    list_m(),
+    [
+      bind("x", [1, 2, 3]),
+      bind("y", [10, 20])
+    ],
+    fn(vars): list_return([vars["x"], vars["y"]]);
+  )
+end
+
+# Example 3: State monad for stateful computation
+def example_state_counter():
+  domonad(
+    state_m(),
+    [
+      bind("a", state_get()),
+      bind("_", state_put(5)),
+      bind("b", state_get()),
+      bind("_", state_modify(fn(s): s * 2;))
+    ],
+    fn(vars): state_return(vars);
+  )
+end
+
+# Example 4: Writer monad for logging
+def example_writer():
+  domonad(
+    writer_m(),
+    [
+      bind("x", writer_return(5)),
+      bind("_", writer_tell("Got value: 5")),
+      bind("y", writer_return(10)),
+      bind("_", writer_tell("Got value: 10"))
+    ],
+    fn(vars): writer_return(vars["x"] + vars["y"]);
+  )
+end
+
+# Example 5: Either monad for error handling
+def parse_int(str):
+  let num = to_number(str)
+  | if (is_none(num)):
+      either_left("Invalid number: " + str)
+    else:
+      either_right(num)
+end
+
+def example_either():
+  domonad(
+    either_m(),
+    [
+      bind("a", parse_int("42")),
+      bind("b", parse_int("10")),
+      bind("c", parse_int("5"))
+    ],
+    fn(vars): either_return(vars["a"] + vars["b"] + vars["c"]);
+  )
+end
+
+# Example 6: Using m_sequence
+def example_sequence():
+  let numbers = ["1", "2", "3", "4"]
+  | m_sequence(either_m(), map(numbers, parse_int))
+end
+
+# Example 7: Using m_map
+def example_map():
+  let add_ten = fn(x): either_return(x + 10);
+  | m_map(either_m(), [1, 2, 3], add_ten)
+end
+
+# Example 8: Using m_comp for function composition
+def example_compose():
+  let add_ten = fn(x): maybe_return(x + 10);
+  | let double = fn(x): maybe_return(x * 2);
+  | let composed = m_comp(maybe_m(), add_ten, double)
+  | composed(5)
+end
+
+# Example 9: List monad with m_plus
+def example_list_plus():
+  m_plus(list_m(), [1, 2, 3], [4, 5, 6])
+end
+
+# Example 10: Pythagorean triples using list monad
+def pythagorean_triples(n):
+  domonad(
+    list_m(),
+    [
+      bind("x", range(1, n)),
+      bind("y", range(1, n)),
+      bind("z", range(1, n))
+    ],
+    fn(vars):
+      let x = vars["x"]
+      | let y = vars["y"]
+      | let z = vars["z"]
+      | if (x * x + y * y == z * z && x < y && y < z):
+          list_return([x, y, z])
+        else:
+          list_zero()
+    end
+  )
+end
+
+# Example 11: Reader monad for configuration
+def example_reader_config():
+  domonad(
+    reader_m(),
+    [
+      bind("db_host", asks(fn(env): env["db_host"];)),
+      bind("db_port", asks(fn(env): env["db_port"];))
+    ],
+    fn(vars):
+      reader_return(
+      "Connecting to " + vars["db_host"] + ":" + to_string(vars["db_port"])
+      )
+    end
+  )
+end

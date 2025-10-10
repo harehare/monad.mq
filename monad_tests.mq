@@ -1,0 +1,516 @@
+# Monad Laws Tests
+# Tests whether all monads in monad.mq satisfy the three monad laws:
+# 1. Left Identity: return(a) >>= f ≡ f(a)
+# 2. Right Identity: m >>= return ≡ m
+# 3. Associativity: (m >>= f) >>= g ≡ m >>= (λx. f(x) >>= g)
+
+include "monad"
+| include "test"
+
+# ============================================================================
+# Identity Monad Tests
+# ============================================================================
+
+| def test_identity_left_identity():
+    let a = 42
+    | let f = fn(x): identity_return(x * 2);
+    | let left = identity_bind(identity_return(a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_identity_right_identity():
+    let m = 100
+    | let left = identity_bind(m, fn(x): identity_return(x);)
+    | let right = m
+    | assert_eq(left, right)
+  end
+
+| def test_identity_associativity():
+    let m = 5
+    | let f = fn(x): identity_return(x + 3);
+    | let g = fn(y): identity_return(y * 2);
+    | let left = identity_bind(identity_bind(m, f), g)
+    | let right = identity_bind(m, fn(x): identity_bind(f(x), g);)
+    | assert_eq(left, right)
+  end
+
+# ============================================================================
+# Maybe Monad Tests
+# ============================================================================
+
+| def test_maybe_left_identity():
+    let a = 10
+    | let f = fn(x): maybe_return(x + 5);
+    | let left = maybe_bind(maybe_return(a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_maybe_right_identity():
+    let m = 42
+    | let left = maybe_bind(m, fn(x): maybe_return(x);)
+    | let right = m
+    | assert_eq(left, right)
+  end
+
+| def test_maybe_associativity():
+    let m = 7
+    | let f = fn(x): maybe_return(x * 3);
+    | let g = fn(y): maybe_return(y + 10);
+    | let right = maybe_bind(m, fn(x): maybe_bind(f(x), g);)
+    | let left = maybe_bind(maybe_bind(m, f), g)
+    | assert_eq(right, left)
+  end
+
+| def test_maybe_none_propagation():
+    let m = None
+    | let f = fn(x): maybe_return(x + 1);
+    | let result = maybe_bind(m, f)
+    | assert_none(result)
+  end
+
+# ============================================================================
+# List Monad Tests
+# ============================================================================
+
+| def test_list_left_identity():
+    let a = 3
+    | let f = fn(x): list_return(x * 2);
+    | let left = list_bind(list_return(a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_list_right_identity():
+    let m = [1, 2, 3]
+    | let left = list_bind(m, fn(x): list_return(x);)
+    | let right = m
+    | assert_eq(left, right)
+  end
+
+| def test_list_associativity():
+    let m = [1, 2]
+    | let f = fn(x): [x, x + 1];
+    | let g = fn(y): [y, y * 2];
+    | let left = list_bind(list_bind(m, f), g)
+    | let right = list_bind(m, fn(x): list_bind(f(x), g);)
+    | assert_eq(left, right)
+  end
+
+| def test_list_zero():
+    let m = list_zero()
+    | assert_empty(m)
+  end
+
+# ============================================================================
+# State Monad Tests
+# ============================================================================
+
+| def test_state_left_identity():
+    let a = 5
+    | let f = fn(x): state_return(x + 10);
+    | let left = state_bind(state_return(a), f)
+    | let right = f(a)
+    | let initial_state = 0
+    | assert_eq(left["run"](initial_state), right["run"](initial_state))
+  end
+
+| def test_state_right_identity():
+    let m = state_return(42)
+    | let left = state_bind(m, fn(x): state_return(x);)
+    | let right = m
+    | let initial_state = 100
+    | assert_eq(left["run"](initial_state), right["run"](initial_state))
+  end
+
+| def test_state_associativity():
+    let m = state_return(3)
+    | let f = fn(x): state_return(x * 2);
+    | let g = fn(y): state_return(y + 7);
+    | let left = state_bind(state_bind(m, f), g)
+    | let right = state_bind(m, fn(x): state_bind(f(x), g);)
+    | let initial_state = 50
+    | assert_eq(left["run"](initial_state), right["run"](initial_state))
+  end
+
+| def test_state_threading():
+    let computation = state_bind(
+      state_get(),
+      fn(s):
+        state_bind(
+          state_put(s + 1),
+          fn(_): state_get();
+        )
+      end
+    )
+    | let result = run_state(computation, 10)
+    | assert_eq(result[0], 11)
+    | assert_eq(result[1], 11)
+  end
+
+# ============================================================================
+# Writer Monad Tests
+# ============================================================================
+
+| def test_writer_left_identity():
+    let a = 8
+    | let f = fn(x): writer_return(x + 2);
+    | let left = writer_bind(writer_return(a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_writer_right_identity():
+    let m = [15, []]
+    | let left = writer_bind(m, fn(x): writer_return(x);)
+    | let right = m
+    | assert_eq(left, right)
+  end
+
+| def test_writer_associativity():
+    let m = [4, []]
+    | let f = fn(x): [x * 3, ["multiplied by 3"]];
+    | let g = fn(y): [y + 5, ["added 5"]];
+    | let left = writer_bind(writer_bind(m, f), g)
+    | let right = writer_bind(m, fn(x): writer_bind(f(x), g);)
+    | assert_eq(left, right)
+  end
+
+| def test_writer_log_accumulation():
+    let m = writer_bind(
+      writer_return(10),
+      fn(x):
+        writer_bind(
+          writer_tell("First log"),
+          fn(_):
+            writer_bind(
+              writer_return(x + 5),
+              fn(y):
+                writer_bind(
+                  writer_tell("Second log"),
+                  fn(__): writer_return(y);
+                )
+              end
+            )
+          end
+        )
+      end
+    )
+    | assert_eq(m[0], 15)
+    | assert_eq(m[1], ["First log", "Second log"])
+  end
+
+# ============================================================================
+# Reader Monad Tests
+# ============================================================================
+
+| def test_reader_left_identity():
+    let a = 12
+    | let f = fn(x): reader_return(x + 8);
+    | let left = reader_bind(reader_return(a), f)
+    | let right = f(a)
+    | let env = {"config": "test"}
+    | assert_eq(left["run"](env), right["run"](env))
+  end
+
+| def test_reader_right_identity():
+    let m = reader_return(25)
+    | let left = reader_bind(m, fn(x): reader_return(x);)
+    | let right = m
+    | let env = {"value": 100}
+    | assert_eq(left["run"](env), right["run"](env))
+  end
+
+| def test_reader_associativity():
+    let m = reader_return(6)
+    | let f = fn(x): reader_return(x * 4);
+    | let g = fn(y): reader_return(y - 3);
+    | let left = reader_bind(reader_bind(m, f), g)
+    | let right = reader_bind(m, fn(x): reader_bind(f(x), g);)
+    | let env = {"settings": "default"}
+    | assert_eq(left["run"](env), right["run"](env))
+  end
+
+| def test_reader_environment_access():
+    let computation = reader_bind(
+      ask(),
+      fn(env):
+        reader_return(env["value"] * 2)
+      end
+    )
+    | let result = run_reader(computation, {"value": 10})
+    | assert_eq(result, 20)
+  end
+
+# ============================================================================
+# Either Monad Tests
+# ============================================================================
+
+| def test_either_left_identity():
+    let a = 7
+    | let f = fn(x): either_return(x + 3);
+    | let left = either_bind(either_return(a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_either_right_identity():
+    let m = either_right(30)
+    | let left = either_bind(m, fn(x): either_return(x);)
+    | let right = m
+    | assert_eq(left, right)
+  end
+
+| def test_either_associativity():
+    let m = either_right(9)
+    | let f = fn(x): either_return(x * 2);
+    | let g = fn(y): either_return(y + 1);
+    | let left = either_bind(either_bind(m, f), g)
+    | let right = either_bind(m, fn(x): either_bind(f(x), g);)
+    | assert_eq(left, right)
+  end
+
+| def test_either_left_propagation():
+    let error = either_left("Error occurred")
+    | let f = fn(x): either_return(x + 1);
+    | let result = either_bind(error, f)
+    | assert_true(is_left(result))
+    | assert_eq(result["value"], "Error occurred")
+  end
+
+# ============================================================================
+# Monad Definition Tests (using make_monad)
+# ============================================================================
+
+| def test_identity_m_left_identity():
+    let monad = identity_m()
+    | let a = 20
+    | let f = fn(x): monad["m-result"](x * 3);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_maybe_m_left_identity():
+    let monad = maybe_m()
+    | let a = 15
+    | let f = fn(x): monad["m-result"](x + 10);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_list_m_left_identity():
+    let monad = list_m()
+    | let a = 5
+    | let f = fn(x): monad["m-result"](x * 2);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_state_m_left_identity():
+    let monad = state_m()
+    | let a = 8
+    | let f = fn(x): monad["m-result"](x + 5);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | let initial_state = 0
+    | assert_eq(left["run"](initial_state), right["run"](initial_state))
+  end
+
+| def test_writer_m_left_identity():
+    let monad = writer_m()
+    | let a = 12
+    | let f = fn(x): monad["m-result"](x - 2);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+| def test_reader_m_left_identity():
+    let monad = reader_m()
+    | let a = 18
+    | let f = fn(x): monad["m-result"](x / 2);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | let env = {}
+    | assert_eq(left["run"](env), right["run"](env))
+  end
+
+| def test_either_m_left_identity():
+    let monad = either_m()
+    | let a = 25
+    | let f = fn(x): monad["m-result"](x * 4);
+    | let left = monad["m-bind"](monad["m-result"](a), f)
+    | let right = f(a)
+    | assert_eq(left, right)
+  end
+
+# ============================================================================
+# Monadic Composition Tests
+# ============================================================================
+
+| def test_m_sequence_preserves_structure():
+    let monad = maybe_m()
+    | let values = [maybe_return(1), maybe_return(2), maybe_return(3)]
+    | let result = m_sequence(monad, values)
+    | assert_eq(result, [1, 2, 3])
+  end
+
+| def test_m_sequence_with_none():
+    let monad = maybe_m()
+    | let values = [maybe_return(1), None, maybe_return(3)]
+    | let result = m_sequence(monad, values)
+    | assert_none(result)
+  end
+
+| def test_m_map_list_monad():
+    let monad = list_m()
+    | let add_one = fn(x): list_return(x + 1);
+    | let result = m_map(monad, [1, 2, 3], add_one)
+    | assert_eq(result, [2, 3, 4])
+  end
+
+| def test_m_comp_composition():
+    let monad = maybe_m()
+    | let add_five = fn(x): maybe_return(x + 5);
+    | let double = fn(x): maybe_return(x * 2);
+    | let composed = m_comp(monad, add_five, double)
+    | let result = composed(10)
+    | assert_eq(result, 30)
+  end
+
+| def test_m_lift_function():
+    let monad = maybe_m()
+    | let add_ten = fn(x): x + 10;
+    | let lifted = m_lift(monad, add_ten)
+    | let result = lifted(5)
+    | assert_eq(result, 15)
+  end
+
+# ============================================================================
+# m_when Tests
+# ============================================================================
+
+| def test_m_when_true_condition():
+    let monad = maybe_m()
+    | let action = maybe_return(42)
+    | let result = m_when(monad, true, action)
+    | assert_eq(result, 42)
+  end
+
+| def test_m_when_false_condition():
+    let monad = maybe_m()
+    | let action = maybe_return(42)
+    | let result = m_when(monad, false, action)
+    | assert_none(result)
+  end
+
+| def test_m_when_with_list_monad():
+    let monad = list_m()
+    | let action = list_return(100)
+    | let result_true = m_when(monad, true, action)
+    | let result_false = m_when(monad, false, action)
+    | assert_eq(result_true, [100])
+    | assert_eq(result_false, [None])
+  end
+
+| def test_m_when_with_state_monad():
+    let monad = state_m()
+    | let action = state_put(10)
+    | let result_true = m_when(monad, true, action)
+    | let result_false = m_when(monad, false, action)
+    | let state_true = run_state(result_true, 0)
+    | let state_false = run_state(result_false, 0)
+    | assert_eq(state_true[1], 10)
+    | assert_eq(state_false[1], 0)
+  end
+
+| def test_m_when_with_writer_monad():
+    let monad = writer_m()
+    | let action = writer_tell("Action executed")
+    | let result_true = m_when(monad, true, action)
+    | let result_false = m_when(monad, false, action)
+    | assert_eq(result_true[1], ["Action executed"])
+    | assert_eq(result_false[1], [])
+  end
+
+| def test_m_when_with_either_monad():
+    let monad = either_m()
+    | let action = either_return(99)
+    | let result_true = m_when(monad, true, action)
+    | let result_false = m_when(monad, false, action)
+    | assert_eq(result_true["value"], 99)
+    | assert_none(result_false["value"])
+  end
+
+|
+
+run_tests([
+  # Identity Monad Tests
+  test_case("Identity Monad - Left Identity", test_identity_left_identity),
+  test_case("Identity Monad - Right Identity", test_identity_right_identity),
+  test_case("Identity Monad - Associativity", test_identity_associativity),
+
+  # Maybe Monad Tests
+  test_case("Maybe Monad - Identity", test_maybe_left_identity),
+  test_case("Maybe Monad - Right Identity", test_maybe_right_identity),
+  test_case("Maybe Monad - Associativity", test_maybe_associativity),
+  test_case("Maybe Monad - None Propagation", test_maybe_none_propagation),
+
+  # List Monad Tests
+  test_case("List Monad - Left Identity", test_list_left_identity),
+  test_case("List Monad - Right Identity", test_list_right_identity),
+  test_case("List Monad - Associativity", test_list_associativity),
+  test_case("List Monad - Zero", test_list_zero),
+
+  # State Monad Tests
+  test_case("State Monad - Left Identity", test_state_left_identity),
+  test_case("State Monad - Right Identity", test_state_right_identity),
+  test_case("State Monad - Associativity", test_state_associativity),
+  test_case("State Monad - State Threading", test_state_threading),
+
+  # Writer Monad Tests
+  test_case("Writer Monad - Left Identity", test_writer_left_identity),
+  test_case("Writer Monad - Right Identity", test_writer_right_identity),
+  test_case("Writer Monad - Associativity", test_writer_associativity),
+  test_case("Writer Monad - Log Accumulation", test_writer_log_accumulation),
+
+  # Reader Monad Tests
+  test_case("Reader Monad - Left Identity", test_reader_left_identity),
+  test_case("Reader Monad - Right Identity", test_reader_right_identity),
+  test_case("Reader Monad - Associativity", test_reader_associativity),
+  test_case("Reader Monad - Environment Access", test_reader_environment_access),
+
+  # Either Monad Tests
+  test_case("Either Monad - Left Identity", test_either_left_identity),
+  test_case("Either Monad - Right Identity", test_either_right_identity),
+  test_case("Either Monad - Associativity", test_either_associativity),
+  test_case("Either Monad - Left Propagation", test_either_left_propagation),
+
+  # Monad Definition Tests (using make_monad)
+  test_case("identity_m() - Left Identity", test_identity_m_left_identity),
+  test_case("maybe_m() - Left Identity", test_maybe_m_left_identity),
+  test_case("list_m() - Left Identity", test_list_m_left_identity),
+  test_case("state_m() - Left Identity", test_state_m_left_identity),
+  test_case("writer_m() - Left Identity", test_writer_m_left_identity),
+  test_case("reader_m() - Left Identity", test_reader_m_left_identity),
+  test_case("either_m() - Left Identity", test_either_m_left_identity),
+
+  # Monadic Composition Tests
+  test_case("m_sequence - Preserves Structure", test_m_sequence_preserves_structure),
+  test_case("m_sequence - With None", test_m_sequence_with_none),
+  test_case("m_map - List Monad", test_m_map_list_monad),
+  test_case("m_comp - Composition", test_m_comp_composition),
+  test_case("m_lift - Function Lifting", test_m_lift_function),
+
+  # m_when Tests
+  test_case("m_when - True Condition", test_m_when_true_condition),
+  test_case("m_when - False Condition", test_m_when_false_condition),
+  test_case("m_when - With List Monad", test_m_when_with_list_monad),
+  test_case("m_when - With State Monad", test_m_when_with_state_monad),
+  test_case("m_when - With Writer Monad", test_m_when_with_writer_monad),
+  test_case("m_when - With Either Monad", test_m_when_with_either_monad)
+])
