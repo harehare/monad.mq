@@ -112,11 +112,11 @@ def run_reader(computation, env): computation["run"](env);
 # ============================================================================
 
 def either_left(error):
-  {"type": "left", "value": error}
+  {type: "left", value: error}
 end
 
 def either_right(value):
-  {"type": "right", "value": value}
+  {type: "right", value: value}
 end
 
 def either_return(value):
@@ -124,18 +124,18 @@ def either_return(value):
 end
 
 def either_bind(m, f):
-  if (m["type"] == "left"):
+  if (m[:type] == "left"):
     m
   else:
-    f(m["value"])
+    f(m[:value])
 end
 
 def is_left(either):
-  either["type"] == "left"
+  either[:type] == "left"
 end
 
 def is_right(either):
-  either["type"] == "right"
+  either[:type] == "right"
 end
 
 # ============================================================================
@@ -242,7 +242,7 @@ end
 
 # Create a binding for domonad
 def bind(name, value):
-  {"name": name, "value": value}
+  {name: name, value: value}
 end
 
 # Compose monadic functions (left to right)
@@ -327,11 +327,11 @@ def example_maybe():
   domonad(
     maybe_m(),
     [
-      bind("x", safe_divide(10, 2)),
-      bind("y", safe_divide(20, 4)),
-      bind("z", safe_divide(30, 3))
+      bind(:x, safe_divide(10, 2)),
+      bind(:y, safe_divide(20, 4)),
+      bind(:z, safe_divide(30, 3))
     ],
-    fn(vars): maybe_return(vars["x"] + vars["y"] + vars["z"]);
+    fn(vars): maybe_return(vars[:x] + vars[:y] + vars[:z]);
   )
 end
 
@@ -340,10 +340,10 @@ def example_list_pairs():
   domonad(
     list_m(),
     [
-      bind("x", [1, 2, 3]),
-      bind("y", [10, 20])
+      bind(:x, [1, 2, 3]),
+      bind(:y, [10, 20])
     ],
-    fn(vars): list_return([vars["x"], vars["y"]]);
+    fn(vars): list_return([vars[:x], vars[:y]]);
   )
 end
 
@@ -352,10 +352,10 @@ def example_state_counter():
   domonad(
     state_m(),
     [
-      bind("a", state_get()),
-      bind("_", state_put(5)),
-      bind("b", state_get()),
-      bind("_", state_modify(fn(s): s * 2;))
+      bind(:a, state_get()),
+      bind(:"_", state_put(5)),
+      bind(:b, state_get()),
+      bind(:"_", state_modify(fn(s): s * 2;))
     ],
     fn(vars): state_return(vars);
   )
@@ -366,12 +366,12 @@ def example_writer():
   domonad(
     writer_m(),
     [
-      bind("x", writer_return(5)),
-      bind("_", writer_tell("Got value: 5")),
-      bind("y", writer_return(10)),
-      bind("_", writer_tell("Got value: 10"))
+      bind(:x, writer_return(5)),
+      bind(:"_", writer_tell("Got value: 5")),
+      bind(:y, writer_return(10)),
+      bind(:"_", writer_tell("Got value: 10"))
     ],
-    fn(vars): writer_return(vars["x"] + vars["y"]);
+    fn(vars): writer_return(vars[:x] + vars[:y]);
   )
 end
 
@@ -388,11 +388,11 @@ def example_either():
   domonad(
     either_m(),
     [
-      bind("a", parse_int("42")),
-      bind("b", parse_int("10")),
-      bind("c", parse_int("5"))
+      bind(:a, parse_int("42")),
+      bind(:b, parse_int("10")),
+      bind(:c, parse_int("5"))
     ],
-    fn(vars): either_return(vars["a"] + vars["b"] + vars["c"]);
+    fn(vars): either_return(vars[:a] + vars[:b] + vars[:c]);
   )
 end
 
@@ -426,14 +426,14 @@ def pythagorean_triples(n):
   domonad(
     list_m(),
     [
-      bind("x", range(1, n)),
-      bind("y", range(1, n)),
-      bind("z", range(1, n))
+      bind(:x, range(1, n)),
+      bind(:y, range(1, n)),
+      bind(:z, range(1, n))
     ],
     fn(vars):
-      let x = vars["x"]
-      | let y = vars["y"]
-      | let z = vars["z"]
+      let x = vars[:x]
+      | let y = vars[:y]
+      | let z = vars[:z]
       | if (x * x + y * y == z * z && x < y && y < z):
           list_return([x, y, z])
         else:
@@ -447,12 +447,12 @@ def example_reader_config():
   domonad(
     reader_m(),
     [
-      bind("db_host", asks(fn(env): env["db_host"];)),
-      bind("db_port", asks(fn(env): env["db_port"];))
+      bind(:db_host, asks(fn(env): env[:db_host];)),
+      bind(:db_port, asks(fn(env): env[:db_port];))
     ],
     fn(vars):
       reader_return(
-      "Connecting to " + vars["db_host"] + ":" + to_string(vars["db_port"])
+      "Connecting to " + vars[:db_host] + ":" + to_string(vars[:db_port])
       )
     end
   )
